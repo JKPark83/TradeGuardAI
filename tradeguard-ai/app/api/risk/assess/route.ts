@@ -7,10 +7,18 @@
 
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { ApiError, toApiResponse, unauthenticated, validationError } from '@/lib/utils/api-error';
+import {
+  ApiError,
+  rateLimited,
+  toApiResponse,
+  unauthenticated,
+  validationError,
+} from '@/lib/utils/api-error';
 import { withRequestId } from '@/lib/utils/logger';
 import { assessRisk } from '@/lib/services/risk-assessment';
 import { tradeSideSchema } from '@/lib/validation/common';
+import { RATE_LIMITS, checkRateLimit } from '@/lib/utils/rate-limit';
+import { checkCostGuard } from '@/lib/llm/cost-guard';
 
 export const runtime = 'nodejs';
 
@@ -37,6 +45,13 @@ export async function POST(req: Request): Promise<Response> {
     } = await supabase.auth.getUser();
     if (!user) return unauthenticated();
 
+    // Rate limit before parsing the body so abusers don't waste cycles.
+    const rl = checkRateLimit(RATE_LIMITS.RISK_ASSESS.bucket, user.id, RATE_LIMITS.RISK_ASSESS);
+    if (!rl.allowed) {
+      log.warn('risk_assess_rate_limited', { retryAfter: rl.retryAfterSeconds });
+      return rateLimited(rl.retryAfterSeconds ?? 60);
+    }
+
     let json: unknown;
     try {
       json = await req.json();
@@ -50,6 +65,20 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
+    // If LLM explanation is requested, check the daily cost cap first.
+    // Scoring itself is free — only the optional explanation can blow budget.
+    const wantsLLM = parsed.data.includeLLMExplanation ?? false;
+    if (wantsLLM) {
+      const guard = await checkCostGuard(supabase, user.id);
+      if (!guard.allowed) {
+        log.warn('risk_assess_cost_capped', {
+          spent: guard.spentTodayUsd,
+          cap: guard.capUsd,
+        });
+        return rateLimited(guard.retryAfterSeconds ?? 3600);
+      }
+    }
+
     const response = await assessRisk({
       supabase,
       ownerId: user.id,
@@ -58,7 +87,7 @@ export async function POST(req: Request): Promise<Response> {
         side: parsed.data.candidateSide,
         contracts: parsed.data.candidateContracts ?? null,
       },
-      includeLLMExplanation: parsed.data.includeLLMExplanation ?? false,
+      includeLLMExplanation: wantsLLM,
     });
 
     const durationMs = Date.now() - startedAt;

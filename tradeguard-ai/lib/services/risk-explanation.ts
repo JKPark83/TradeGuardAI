@@ -11,8 +11,10 @@
 //   - On second failure or timeout / network error → return the deterministic
 //     fallback string (so the assessment still persists per FR-018).
 
-import type { LlmClient } from '@/lib/llm/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { LlmClient, LlmProvider } from '@/lib/llm/client';
 import { containsWarmthExpression } from '@/lib/llm/filter';
+import { recordLlmCall } from '@/lib/llm/telemetry';
 import { logger } from '@/lib/utils/logger';
 import type { RiskAssessmentSignals, RiskAssessmentWeights } from '@/types/db';
 
@@ -83,24 +85,68 @@ function buildUserMessage(input: RiskExplanationInput, reinforce: boolean): stri
   return lines.join('\n');
 }
 
+interface TelemetryCtx {
+  supabase: SupabaseClient;
+  ownerId: string;
+  provider: LlmProvider;
+}
+
 async function callWithTimeout(
   llmClient: Pick<LlmClient, 'messages'>,
   userMessage: string,
+  telemetry?: TelemetryCtx,
 ): Promise<string | null> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), LLM_TIMEOUT_MS);
   });
+  const startedAt = Date.now();
   try {
     const call = llmClient
       .messages({ systemPrompt: SYSTEM_PROMPT, userMessage, maxTokens: MAX_TOKENS })
-      .then((r) => r.text);
+      .then((r) => {
+        if (telemetry) {
+          void recordLlmCall(telemetry.supabase, {
+            ownerId: telemetry.ownerId,
+            provider: telemetry.provider,
+            purpose: 'risk_explanation',
+            usage: r.tokenUsage,
+            latencyMs: Date.now() - startedAt,
+            ok: true,
+          });
+        }
+        return r.text;
+      });
     const winner = await Promise.race([call, timeout]);
+    if (winner === null && telemetry) {
+      // Timed out — record a zero-token failed call so the cost guard still
+      // sees the attempt (helps detect runaway retry loops).
+      void recordLlmCall(telemetry.supabase, {
+        ownerId: telemetry.ownerId,
+        provider: telemetry.provider,
+        purpose: 'risk_explanation',
+        usage: { input: 0, output: 0, model: 'unknown' },
+        latencyMs: Date.now() - startedAt,
+        ok: false,
+        errorCode: 'Timeout',
+      });
+    }
     return winner;
   } catch (err) {
     logger.warn('risk_explanation_llm_error', {
       message: err instanceof Error ? err.message : String(err),
     });
+    if (telemetry) {
+      void recordLlmCall(telemetry.supabase, {
+        ownerId: telemetry.ownerId,
+        provider: telemetry.provider,
+        purpose: 'risk_explanation',
+        usage: { input: 0, output: 0, model: 'unknown' },
+        latencyMs: Date.now() - startedAt,
+        ok: false,
+        errorCode: err instanceof Error ? (err.name !== 'Error' ? err.name : 'Error') : 'unknown',
+      });
+    }
     return null;
   } finally {
     if (timer) clearTimeout(timer);
@@ -116,9 +162,10 @@ async function callWithTimeout(
 export async function generateRiskExplanation(
   llmClient: Pick<LlmClient, 'messages'>,
   input: RiskExplanationInput,
+  telemetry?: TelemetryCtx,
 ): Promise<string> {
   // Attempt 1
-  const first = await callWithTimeout(llmClient, buildUserMessage(input, false));
+  const first = await callWithTimeout(llmClient, buildUserMessage(input, false), telemetry);
   if (first !== null && !containsWarmthExpression(first)) {
     return first;
   }
@@ -127,7 +174,7 @@ export async function generateRiskExplanation(
   }
 
   // Attempt 2 with reinforcement
-  const second = await callWithTimeout(llmClient, buildUserMessage(input, true));
+  const second = await callWithTimeout(llmClient, buildUserMessage(input, true), telemetry);
   if (second !== null && !containsWarmthExpression(second)) {
     return second;
   }

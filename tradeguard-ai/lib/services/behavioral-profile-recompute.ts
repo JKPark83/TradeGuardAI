@@ -32,12 +32,22 @@ export async function recomputeBehavioralProfile(
     })),
   );
 
+  // After the F9 fix, aggregate fields are nullable when the user has no
+  // closed trades / scored analyses yet. Preserve the nullness through to
+  // the DB (NUMERIC columns are nullable) instead of coercing to '0' which
+  // would lie about the data state. The repo accepts string | null per row.
   return upsertBehavioralProfile(supabase, ownerId, {
-    avg_stop_delay_score: aggregate.avgStopDelayScore.toFixed(2),
-    avg_revenge_trade_gap_minutes: aggregate.avgRevengeTradeGapMinutes.toFixed(2),
+    avg_stop_delay_score:
+      aggregate.avgStopDelayScore === null ? null : aggregate.avgStopDelayScore.toFixed(2),
+    avg_revenge_trade_gap_minutes:
+      aggregate.avgRevengeTradeGapMinutes === null
+        ? null
+        : aggregate.avgRevengeTradeGapMinutes.toFixed(2),
     max_loss_streak: aggregate.maxLossStreak,
-    night_trading_ratio: aggregate.nightTradingRatio.toFixed(3),
-    overconfidence_score: aggregate.overconfidenceScore.toFixed(2),
+    night_trading_ratio:
+      aggregate.nightTradingRatio === null ? null : aggregate.nightTradingRatio.toFixed(3),
+    overconfidence_score:
+      aggregate.overconfidenceScore === null ? null : aggregate.overconfidenceScore.toFixed(2),
     total_trades: aggregate.totalTrades,
     last_recomputed_at: new Date().toISOString(),
   });

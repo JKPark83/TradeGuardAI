@@ -9,6 +9,8 @@
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -26,6 +28,13 @@ export default function RootLayout({ children }: RootLayoutProps): ReactNode {
     <html lang="ko" className="dark" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground font-mono antialiased">
         <Providers>{children}</Providers>
+        {/*
+          Vercel Analytics + Speed Insights — opt-in observability for the
+          deployed app. Both components are no-ops in dev / when the script
+          can't reach Vercel's edge (e.g., self-hosted). PII-safe by default.
+        */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

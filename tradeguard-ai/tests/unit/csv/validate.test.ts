@@ -106,9 +106,8 @@ describe('validateNormalizedRow — pnl sign / magnitude checks', () => {
 
 describe('validateNormalizedRow — invalid side', () => {
   it('rejects rows whose side is not "long" or "short"', () => {
-    const bad = row() as NormalizedTradeRow & { side: string };
-    bad.side = 'foobar';
-    const result = validateNormalizedRow(bad as NormalizedTradeRow);
+    const bad = { ...row(), side: 'foobar' } as unknown as NormalizedTradeRow;
+    const result = validateNormalizedRow(bad);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe('invalid_side');

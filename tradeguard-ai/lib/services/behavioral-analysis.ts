@@ -48,7 +48,7 @@ export async function recomputeAnalysesForTrades(
   // that already have ANY analysis row — only "uncomputed" trades proceed.
   // Callers needing a forced re-score must pass explicit tradeIds, which
   // bypasses this gate intentionally.
-  const isExplicitTradeIds = tradeIds !== undefined && tradeIds.length > 0;
+  const isExplicitTradeIds = Array.isArray(tradeIds) && tradeIds.length > 0;
   if (!isExplicitTradeIds) {
     const uncomputed = await getTradesWithoutAnalysis(supabase, ownerId);
     const uncomputedIds = new Set(uncomputed.map((t) => t.id));

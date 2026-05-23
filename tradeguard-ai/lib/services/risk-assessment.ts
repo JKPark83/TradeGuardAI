@@ -317,18 +317,29 @@ export async function assessRisk(params: AssessRiskParams): Promise<RiskAssessRe
   if (includeLLMExplanation) {
     const llm = params.llmClient ?? safeLlmClient();
     if (llm) {
-      llmExplanation = await generateRiskExplanation(llm, {
-        riskScore: score,
-        signals,
-        effectiveWeights: effective,
-        warningMessage,
-        floorApplied,
-        candidate: {
-          symbol: candidate.symbol,
-          side: candidate.side,
-          contracts: candidate.contracts,
+      // Only pass telemetry when the LlmClient is real (it carries the
+      // provider tag). Mock clients used by tests usually omit `provider`
+      // — falling back to undefined disables telemetry recording in that case.
+      const llmProvider = 'provider' in llm ? (llm as LlmClient).provider : undefined;
+      const telemetry = llmProvider
+        ? { supabase, ownerId, provider: llmProvider }
+        : undefined;
+      llmExplanation = await generateRiskExplanation(
+        llm,
+        {
+          riskScore: score,
+          signals,
+          effectiveWeights: effective,
+          warningMessage,
+          floorApplied,
+          candidate: {
+            symbol: candidate.symbol,
+            side: candidate.side,
+            contracts: candidate.contracts,
+          },
         },
-      });
+        telemetry,
+      );
     }
   }
 

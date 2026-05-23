@@ -55,26 +55,26 @@ describe('computeBehavioralAggregates — 10-trade fixture', () => {
   ];
 
   it('totalTrades counts all closed trades', () => {
-    const profile = computeBehavioralAggregates(trades);
+    const profile = computeBehavioralAggregates(trades, []);
     expect(profile.totalTrades).toBe(10);
   });
 
   it('maxLossStreak is the longest consecutive losing run', () => {
-    const profile = computeBehavioralAggregates(trades);
+    const profile = computeBehavioralAggregates(trades, []);
     // L L L L at indices 6,7,8,9 → streak 4
     expect(profile.maxLossStreak).toBe(4);
   });
 
   it('nightTradingRatio is fraction of trades entered 22:00–06:00 UTC', () => {
-    const profile = computeBehavioralAggregates(trades);
+    const profile = computeBehavioralAggregates(trades, []);
     // 4 night entries / 10 total = 0.4
     expect(profile.nightTradingRatio).toBeCloseTo(0.4, 5);
   });
 
   it('determinism: same trades yield identical aggregates 100 times', () => {
-    const first = computeBehavioralAggregates(trades);
+    const first = computeBehavioralAggregates(trades, []);
     for (let i = 0; i < 100; i += 1) {
-      const next = computeBehavioralAggregates(trades);
+      const next = computeBehavioralAggregates(trades, []);
       expect(next).toEqual(first);
     }
   });
@@ -82,11 +82,12 @@ describe('computeBehavioralAggregates — 10-trade fixture', () => {
 
 describe('computeBehavioralAggregates — empty input', () => {
   it('returns null aggregates (not 0/NaN) when trades array is empty', () => {
-    const profile = computeBehavioralAggregates([]);
+    const profile = computeBehavioralAggregates([], []);
     // totalTrades is the one safe "count" field — must be 0.
     expect(profile.totalTrades).toBe(0);
-    // Distributional aggregates must be null per data-model.md.
-    expect(profile.maxLossStreak).toBeNull();
+    // `maxLossStreak` is a count (INT NOT NULL in the DB) — always 0 on empty.
+    expect(profile.maxLossStreak).toBe(0);
+    // Distributional aggregates remain null per data-model.md.
     expect(profile.nightTradingRatio).toBeNull();
     expect(profile.avgStopDelayScore).toBeNull();
     expect(profile.avgRevengeTradeGapMinutes).toBeNull();
@@ -94,7 +95,7 @@ describe('computeBehavioralAggregates — empty input', () => {
   });
 
   it('NaN never leaks into aggregate outputs', () => {
-    const profile = computeBehavioralAggregates([]);
+    const profile = computeBehavioralAggregates([], []);
     for (const v of Object.values(profile)) {
       if (typeof v === 'number') {
         expect(Number.isNaN(v)).toBe(false);
@@ -105,13 +106,13 @@ describe('computeBehavioralAggregates — empty input', () => {
 
 describe('computeBehavioralAggregates — single-trade edge cases', () => {
   it('single winning trade: maxLossStreak = 0', () => {
-    const profile = computeBehavioralAggregates([trade({ pnl: '10' })]);
+    const profile = computeBehavioralAggregates([trade({ pnl: '10' })], []);
     expect(profile.totalTrades).toBe(1);
     expect(profile.maxLossStreak).toBe(0);
   });
 
   it('single losing trade: maxLossStreak = 1', () => {
-    const profile = computeBehavioralAggregates([trade({ pnl: '-10' })]);
+    const profile = computeBehavioralAggregates([trade({ pnl: '-10' })], []);
     expect(profile.totalTrades).toBe(1);
     expect(profile.maxLossStreak).toBe(1);
   });
