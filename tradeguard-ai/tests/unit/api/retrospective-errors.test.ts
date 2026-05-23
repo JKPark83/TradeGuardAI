@@ -10,7 +10,7 @@ import { ApiClientError } from '@/lib/api/client';
 import { classifyRetrospectiveError } from '@/lib/api/retrospective-errors';
 
 function err(status: number, body: Record<string, unknown>): ApiClientError {
-  return new ApiClientError(status, body as Parameters<typeof ApiClientError>[1]);
+  return new ApiClientError(status, body as ConstructorParameters<typeof ApiClientError>[1]);
 }
 
 describe('classifyRetrospectiveError', () => {
