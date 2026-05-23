@@ -273,3 +273,61 @@ describe('generateRetrospective', () => {
     });
   });
 });
+
+describe('generateRetrospective — period mode error envelopes', () => {
+  it('throws ApiError 422 no_trades_in_period when window is empty', async () => {
+    // Owner has one trade in May, but user asks for a March window.
+    const { client } = buildSupabaseStub([buildTrade()]);
+    const llm = makeLlmStub(['— unused —']);
+
+    await expect(
+      generateRetrospective({
+        supabase: client,
+        ownerId: OWNER_ID,
+        period: { from: '2026-03-01', to: '2026-03-31' },
+        llmClient: llm.client,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      body: expect.objectContaining({ error: 'no_trades_in_period' }),
+    });
+    expect(llm.calls).toBe(0); // never reaches LLM
+  });
+
+  it('throws ApiError 400 invalid_period_range when from > to', async () => {
+    const { client } = buildSupabaseStub([buildTrade()]);
+    const llm = makeLlmStub(['— unused —']);
+
+    await expect(
+      generateRetrospective({
+        supabase: client,
+        ownerId: OWNER_ID,
+        period: { from: '2026-05-31', to: '2026-05-01' },
+        llmClient: llm.client,
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      body: expect.objectContaining({ error: 'invalid_period_range' }),
+    });
+  });
+
+  it('accepts date-only YYYY-MM-DD boundaries and includes the full end day', async () => {
+    // Trade entry at 23:30Z on the requested `to` date — must be IN window
+    // (end-of-day inclusive normalization).
+    const trade = buildTrade({ entry_at: '2026-05-23T23:30:00Z' });
+    const { client } = buildSupabaseStub([trade]);
+    const llm = makeLlmStub(['패턴 분석 결과 ...']);
+
+    const result = await generateRetrospective({
+      supabase: client,
+      ownerId: OWNER_ID,
+      period: { from: '2026-05-23', to: '2026-05-23' },
+      llmClient: llm.client,
+    });
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.filterPassed).toBe(true);
+    expect(llm.calls).toBe(1);
+  });
+});

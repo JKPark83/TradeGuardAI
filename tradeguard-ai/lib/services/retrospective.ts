@@ -31,6 +31,7 @@ import {
 } from '@/lib/llm/prompts';
 import { insertAnalysisBatch } from '@/lib/repositories/analyses';
 import { getAllTradesForOwner, getTradeById, getTradesByIds } from '@/lib/repositories/trades';
+import { ApiError } from '@/lib/utils/api-error';
 import { logger } from '@/lib/utils/logger';
 
 const MAX_ATTEMPTS = 3;
@@ -200,6 +201,33 @@ interface LoadedTrades {
   relatedTrades: Trade[];
 }
 
+/**
+ * Normalize a user-supplied period boundary to an ISO UTC string.
+ *
+ * Inputs we accept (all parsed by `new Date()`):
+ *   - "2026-05-01"               → date-only — treat as 00:00:00.000 UTC for `from`
+ *                                   and 23:59:59.999 UTC for `to`
+ *   - "2026-05-01T13:00:00Z"     → full ISO, used as-is
+ *   - "2026-05-01T13:00:00+09:00"→ TZ-aware, normalized to UTC ISO
+ *
+ * Returning ISO ensures the lexicographic string compare against
+ * `Trade.entry_at` (also ISO UTC) is correct.
+ */
+function normalizePeriodBoundary(input: string, kind: 'from' | 'to'): string {
+  // Date-only "YYYY-MM-DD"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input.trim())) {
+    return kind === 'from' ? `${input}T00:00:00.000Z` : `${input}T23:59:59.999Z`;
+  }
+  const ms = Date.parse(input);
+  if (Number.isNaN(ms)) {
+    throw new ApiError(400, {
+      error: 'invalid_period_boundary',
+      issues: [{ path: kind === 'from' ? 'periodFrom' : 'periodTo', message: input }],
+    });
+  }
+  return new Date(ms).toISOString();
+}
+
 async function loadTrades(args: {
   supabase: SupabaseClient;
   ownerId: UUID;
@@ -211,25 +239,52 @@ async function loadTrades(args: {
   if (tradeId) {
     const detail = await getTradeById(supabase, ownerId, tradeId);
     if (!detail) {
-      throw new Error('generateRetrospective: trade not found');
+      throw new ApiError(404, {
+        error: 'trade_not_found',
+        issues: [{ path: 'tradeId', message: tradeId }],
+      });
     }
     // getTradeById returns a TradeDetail wrapper; we need the raw Trade row.
     const [raw] = await getTradesByIds(supabase, ownerId, [tradeId]);
     if (!raw) {
-      throw new Error('generateRetrospective: trade row missing after detail lookup');
+      throw new ApiError(404, {
+        error: 'trade_not_found',
+        issues: [{ path: 'tradeId', message: tradeId }],
+      });
     }
     return { focalTrade: raw, relatedTrades: [] };
   }
 
+  if (!period) {
+    throw new Error('generateRetrospective: period missing in non-tradeId branch (caller bug)');
+  }
+
   // Period mode: pick the most-recent trade in the window as focal,
   // pass the rest as related context.
+  const fromIso = normalizePeriodBoundary(period.from, 'from');
+  const toIso = normalizePeriodBoundary(period.to, 'to');
+  if (fromIso > toIso) {
+    throw new ApiError(400, {
+      error: 'invalid_period_range',
+      issues: [{ path: 'periodFrom', message: `periodFrom (${fromIso}) > periodTo (${toIso})` }],
+    });
+  }
+
   const all = await getAllTradesForOwner(supabase, ownerId);
-  const inWindow = all.filter((t) => {
-    if (period && (t.entry_at < period.from || t.entry_at > period.to)) return false;
-    return true;
-  });
+  const inWindow = all.filter((t) => t.entry_at >= fromIso && t.entry_at <= toIso);
   if (inWindow.length === 0) {
-    throw new Error('generateRetrospective: no trades in selected period');
+    throw new ApiError(422, {
+      error: 'no_trades_in_period',
+      issues: [
+        {
+          path: 'period',
+          message: `선택한 기간(${fromIso.slice(0, 10)} ~ ${toIso.slice(0, 10)})에 거래가 없습니다. CSV 업로드 또는 기간을 다시 확인해 주세요.`,
+        },
+      ],
+      periodFrom: fromIso,
+      periodTo: toIso,
+      totalTradesAllTime: all.length,
+    });
   }
   const sorted = [...inWindow].sort((a, b) => b.entry_at.localeCompare(a.entry_at));
   const [focal, ...rest] = sorted;
