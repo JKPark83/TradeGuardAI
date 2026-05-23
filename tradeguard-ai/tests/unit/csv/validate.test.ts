@@ -63,7 +63,7 @@ describe('validateNormalizedRow — missing required fields', () => {
   });
 });
 
-describe('validateNormalizedRow — pnl sign / magnitude checks', () => {
+describe('validateNormalizedRow — pnl sign check (FR-004 방향성)', () => {
   it('rejects long trade where exit > entry but pnl is negative', () => {
     const result = validateNormalizedRow(
       row({ side: 'long', entry_price: '100', exit_price: '110', pnl: '-10' }),
@@ -84,16 +84,47 @@ describe('validateNormalizedRow — pnl sign / magnitude checks', () => {
     }
   });
 
-  it('tolerates ~$0.50 drift on pnl (broker rounding / commissions)', () => {
-    // Computed pnl = (110 - 100) * 1 = 10. CSV reports 9.50 — within tolerance.
+  it('accepts long trade where pnl magnitude reflects per-symbol multiplier (NQ ×$20)', () => {
+    // NQ: 1 point = $20 per contract. Price up 1pt × 2 contracts → pnl = +$40,
+    // not +2. Sign-only check must let this through; magnitude is unknowable
+    // without a per-symbol multiplier table in the validator (FR-004 본문 참조).
+    const result = validateNormalizedRow(
+      row({
+        side: 'long',
+        entry_price: '17950.25',
+        exit_price: '17951.25',
+        pnl: '40',
+        contracts: '2',
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts short trade where pnl magnitude reflects per-symbol multiplier (NQ ×$20)', () => {
+    // Mirror of the long case: price down 1pt on a short → +$40 per 2 contracts.
+    const result = validateNormalizedRow(
+      row({
+        side: 'short',
+        entry_price: '17951.25',
+        exit_price: '17950.25',
+        pnl: '40',
+        contracts: '2',
+      }),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts tiny pnl drift (broker rounding / commissions)', () => {
+    // (110 - 100) * 1 = 10 → sign +. CSV reports 9.50 — same sign, passes.
     const result = validateNormalizedRow(
       row({ side: 'long', entry_price: '100', exit_price: '110', pnl: '9.50' }),
     );
     expect(result.ok).toBe(true);
   });
 
-  it('rejects pnl drift well beyond tolerance', () => {
-    // Computed pnl = 10. CSV reports -100 — clearly wrong sign + magnitude.
+  it('rejects pnl with clearly wrong sign (long winner reported as loss)', () => {
+    // Computed direction is +; CSV reports -100. Magnitude beyond anything
+    // commissions can explain, AND the sign is wrong — fails sign check.
     const result = validateNormalizedRow(
       row({ side: 'long', entry_price: '100', exit_price: '110', pnl: '-100' }),
     );
