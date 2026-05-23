@@ -19,15 +19,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/form';
 import { RetrospectiveCard } from '@/components/retrospective/RetrospectiveCard';
-import { apiFetch, ApiClientError } from '@/lib/api/client';
+import { apiFetch } from '@/lib/api/client';
+import {
+  classifyRetrospectiveError,
+  type RetrospectiveClientErrorKind,
+} from '@/lib/api/retrospective-errors';
 import type { RetrospectiveResponse } from '@/types/api';
 
 type ClientState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'success'; response: RetrospectiveResponse }
-  | { kind: 'filtered_out'; attemptsUsed?: number }
-  | { kind: 'error'; message: string };
+  | RetrospectiveClientErrorKind;
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -58,16 +61,11 @@ export function PeriodRetrospectiveClient(): ReactNode {
       });
       setState({ kind: 'success', response: res });
     } catch (err) {
-      if (err instanceof ApiClientError && err.status === 422) {
-        const attempts = err.body['attemptsUsed'];
-        setState({
-          kind: 'filtered_out',
-          attemptsUsed: typeof attempts === 'number' ? attempts : undefined,
-        });
-        return;
-      }
-      const message = err instanceof Error ? err.message : '회고 생성 중 오류가 발생했습니다.';
-      setState({ kind: 'error', message });
+      // Route now returns several distinct 4xx codes (no_trades_in_period,
+      // invalid_period_range, validation_failed, ...). Classify to a tagged
+      // client state so we can show the right call-to-action per case —
+      // a "재생성" button is only appropriate for tone-filter failures.
+      setState(classifyRetrospectiveError(err));
     }
   }, [periodFrom, periodTo]);
 
@@ -158,7 +156,37 @@ export function PeriodRetrospectiveClient(): ReactNode {
         </Card>
       ) : null}
 
-      {state.kind === 'error' ? (
+      {state.kind === 'no_trades_in_period' ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-tilt-yellow" aria-hidden />
+            <CardTitle>선택한 기간에 거래가 없습니다</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            {typeof state.totalTradesAllTime === 'number' ? (
+              <p className="text-[11px] text-muted-foreground">
+                전체 누적 거래:{' '}
+                <span className="tabular-nums">{state.totalTradesAllTime}</span>건
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {state.kind === 'invalid_period_range' || state.kind === 'invalid_input' ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-tilt-yellow" aria-hidden />
+            <CardTitle>기간 입력을 확인해 주세요</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {state.kind === 'trade_not_found' || state.kind === 'error' ? (
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-tilt-red" aria-hidden />

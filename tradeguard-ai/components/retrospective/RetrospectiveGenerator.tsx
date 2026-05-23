@@ -18,7 +18,11 @@ import { AlertTriangle, RefreshCw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RetrospectiveCard } from './RetrospectiveCard';
-import { apiFetch, ApiClientError } from '@/lib/api/client';
+import { apiFetch } from '@/lib/api/client';
+import {
+  classifyRetrospectiveError,
+  type RetrospectiveClientErrorKind,
+} from '@/lib/api/retrospective-errors';
 import type { RetrospectiveResponse } from '@/types/api';
 import type { UUID } from '@/types/db';
 
@@ -30,8 +34,7 @@ type GeneratorState =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'success'; response: RetrospectiveResponse }
-  | { kind: 'filtered_out'; attemptsUsed?: number }
-  | { kind: 'error'; message: string };
+  | RetrospectiveClientErrorKind;
 
 export function RetrospectiveGenerator({ tradeId }: RetrospectiveGeneratorProps): ReactNode {
   const [state, setState] = useState<GeneratorState>({ kind: 'idle' });
@@ -47,16 +50,9 @@ export function RetrospectiveGenerator({ tradeId }: RetrospectiveGeneratorProps)
         });
         setState({ kind: 'success', response: res });
       } catch (err) {
-        if (err instanceof ApiClientError && err.status === 422) {
-          const attempts = err.body['attemptsUsed'];
-          setState({
-            kind: 'filtered_out',
-            attemptsUsed: typeof attempts === 'number' ? attempts : undefined,
-          });
-          return;
-        }
-        const message = err instanceof Error ? err.message : '회고 생성 중 오류가 발생했습니다.';
-        setState({ kind: 'error', message });
+        // Route returns multiple distinct 4xx codes — branch on body.error
+        // so we render the right CTA. See lib/api/retrospective-errors.ts.
+        setState(classifyRetrospectiveError(err));
       }
     },
     [tradeId],
@@ -119,25 +115,44 @@ export function RetrospectiveGenerator({ tradeId }: RetrospectiveGeneratorProps)
     );
   }
 
-  if (state.kind === 'error') {
+  if (
+    state.kind === 'error' ||
+    state.kind === 'trade_not_found' ||
+    state.kind === 'no_trades_in_period' ||
+    state.kind === 'invalid_period_range' ||
+    state.kind === 'invalid_input'
+  ) {
+    // Single-trade flow doesn't normally produce period-related errors, but
+    // we render them defensively so a future caller (or stale tradeId) still
+    // gets useful copy instead of a silent failure.
+    const isRecoverable = state.kind === 'error' || state.kind === 'trade_not_found';
     return (
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-tilt-red" aria-hidden />
-          <CardTitle>회고 생성 실패</CardTitle>
+          <AlertTriangle
+            className={`h-4 w-4 ${isRecoverable ? 'text-tilt-red' : 'text-tilt-yellow'}`}
+            aria-hidden
+          />
+          <CardTitle>
+            {state.kind === 'trade_not_found' ? '거래를 찾을 수 없음' : '회고 생성 실패'}
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <p className="text-sm text-tilt-red">{state.message}</p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void generate(false)}
-              aria-label="회고 재시도"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden /> 다시 시도
-            </Button>
-          </div>
+          <p className={`text-sm ${isRecoverable ? 'text-tilt-red' : 'text-muted-foreground'}`}>
+            {state.message}
+          </p>
+          {isRecoverable ? (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void generate(false)}
+                aria-label="회고 재시도"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden /> 다시 시도
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     );
