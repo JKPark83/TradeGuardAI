@@ -1,8 +1,17 @@
 // Post-normalization validation for a single CSV row.
 // Pure: no I/O, no DB lookups. Caller decides what to do with rejections.
 //
-// FR-004: the broker's reported PnL must agree with (exit - entry) * direction
-// within tolerance (commissions/fees are often rolled into the broker number).
+// FR-004: the broker's reported PnL must agree with `(exit - entry) * direction`
+// in *sign* (방향성). We deliberately do NOT compare magnitudes: brokers report
+// PnL in USD (price points × contracts × per-symbol multiplier — $20/pt for NQ,
+// $50/pt for ES, $2/pt for MNQ, etc.), and the multiplier is not visible in the
+// CSV row. Comparing magnitude here would falsely reject every NQ/ES row.
+//
+// What we DO catch:
+//   * Sign mismatch — broker says +$100 but `(exit-entry)*direction` is negative,
+//     which is almost always a side/long-short mislabel or a swapped column.
+//   * Zero-price-movement rows whose pnl is non-zero (data corruption).
+//   * Trivially small / NaN values.
 
 import type { NormalizedTradeRow } from './presets';
 
@@ -12,11 +21,6 @@ export type ValidationResult =
   | { ok: true }
   | { ok: false; reason: ValidationFailure; details: string };
 
-/** Larger of 0.5% of |expected| or absolute $1. Brokers round commissions inline. */
-function pnlTolerance(expected: number): number {
-  return Math.max(Math.abs(expected) * 0.005, 1);
-}
-
 function parseNum(s: string): number {
   // Allow comma-grouped numbers ("1,234.56") and stray whitespace.
   return Number(s.replace(/,/g, '').trim());
@@ -25,6 +29,12 @@ function parseNum(s: string): number {
 function isValidIso(s: string): boolean {
   const d = new Date(s);
   return !Number.isNaN(d.getTime());
+}
+
+/** True when `a` and `b` carry the same sign (both >0, both <0, or both ~0). */
+function sameSign(a: number, b: number, eps = 0.005): boolean {
+  if (Math.abs(a) < eps && Math.abs(b) < eps) return true;
+  return Math.sign(a) === Math.sign(b);
 }
 
 export function validateNormalizedRow(row: NormalizedTradeRow): ValidationResult {
@@ -76,14 +86,17 @@ export function validateNormalizedRow(row: NormalizedTradeRow): ValidationResult
     };
   }
 
+  // Sign-only check (FR-004 "방향성"). See file header for rationale.
   const direction = row.side === 'long' ? 1 : -1;
-  const expected = (exitPrice - entryPrice) * direction * contracts;
-  const tol = pnlTolerance(expected);
-  if (Math.abs(pnl - expected) > tol) {
+  const pricePointDelta = (exitPrice - entryPrice) * direction;
+  if (!sameSign(pricePointDelta, pnl)) {
     return {
       ok: false,
       reason: 'pnl_mismatch',
-      details: `reported pnl=${pnl}, expected≈${expected.toFixed(2)} (tol=${tol.toFixed(2)})`,
+      details:
+        `side=${row.side}, (exit-entry)*dir=${pricePointDelta.toFixed(4)} ` +
+        `but reported pnl=${pnl} — signs disagree ` +
+        `(가능 원인: side 라벨 뒤집힘 또는 가격·손익 컬럼 교차)`,
     };
   }
 
