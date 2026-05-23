@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/*
+ * TradeGuard AI — terminal-aesthetic dark theme.
+ *
+ * HSL channels are stored bare (no `hsl()` wrapper) so Tailwind utilities
+ * can compose them via `hsl(var(--background) / <alpha-value>)` if needed.
+ * Default theme is dark; light theme variables omitted for v1 ("냉정한 분석"
+ * is dark-only by product decision — see spec.md UI Concept).
+ */
+
+:root,
+.dark {
+  --background: 0 0% 6%;
+  --foreground: 142 30% 92%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 60%;
+  --border: 0 0% 18%;
+  --ring: 142 76% 36%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-feature-settings: "tnum" 1, "zero" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle scanline / focus polish for terminal feel — opt-in via class. */
+.terminal-glow {
+  text-shadow: 0 0 6px hsl(var(--ring) / 0.35);
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}

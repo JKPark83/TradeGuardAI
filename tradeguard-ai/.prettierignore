@@ -1,0 +1,10 @@
+node_modules
+.next
+dist
+build
+coverage
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+supabase/.branches
+supabase/.temp

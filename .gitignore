@@ -1,0 +1,40 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — defense in depth (subprojects also have their own .gitignore)
+.env
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+keys/
+
+# Tool caches
+node_modules/
+.next/
+__pycache__/
+.venv/
+venv/
+*.pyc
+
+# Build artifacts
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+*.log
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Editor caches
+.vscode/
+.idea/
+
+# Supabase ephemera
+**/supabase/.branches
+**/supabase/.temp

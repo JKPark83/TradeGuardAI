@@ -1,0 +1,62 @@
+[
+  {
+    "name": "winning trade returns 0 regardless of holding",
+    "input": { "holdingMinutes": 120, "userAvgHoldingMinutes30d": 30, "pnl": 250 },
+    "expected": 0
+  },
+  {
+    "name": "winning trade at exact zero pnl returns 0",
+    "input": { "holdingMinutes": 200, "userAvgHoldingMinutes30d": 30, "pnl": 0 },
+    "expected": 0
+  },
+  {
+    "name": "losing trade within 1x avg returns 0",
+    "input": { "holdingMinutes": 25, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 0
+  },
+  {
+    "name": "losing trade at exactly 1x boundary returns 0",
+    "input": { "holdingMinutes": 30, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 0
+  },
+  {
+    "name": "losing trade at 1.5x avg returns 20",
+    "input": { "holdingMinutes": 45, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 20
+  },
+  {
+    "name": "losing trade at exactly 2x boundary returns 20",
+    "input": { "holdingMinutes": 60, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 20
+  },
+  {
+    "name": "losing trade at 2.5x avg returns 50",
+    "input": { "holdingMinutes": 75, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 50
+  },
+  {
+    "name": "losing trade at exactly 3x boundary returns 50",
+    "input": { "holdingMinutes": 90, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 50
+  },
+  {
+    "name": "losing trade at 4x avg returns 70 (50 + 1.0*20)",
+    "input": { "holdingMinutes": 120, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 70
+  },
+  {
+    "name": "losing trade at 5x avg returns 90 (50 + 2.0*20)",
+    "input": { "holdingMinutes": 150, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 90
+  },
+  {
+    "name": "losing trade at 6x avg clamped to 100",
+    "input": { "holdingMinutes": 180, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 100
+  },
+  {
+    "name": "losing trade at 10x avg clamped to 100",
+    "input": { "holdingMinutes": 300, "userAvgHoldingMinutes30d": 30, "pnl": -100 },
+    "expected": 100
+  }
+]
