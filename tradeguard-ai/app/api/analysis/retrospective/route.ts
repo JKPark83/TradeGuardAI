@@ -12,10 +12,18 @@
 
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { ApiError, toApiResponse, unauthenticated, validationError } from '@/lib/utils/api-error';
+import {
+  ApiError,
+  rateLimited,
+  toApiResponse,
+  unauthenticated,
+  validationError,
+} from '@/lib/utils/api-error';
 import { withRequestId } from '@/lib/utils/logger';
 import { generateRetrospective } from '@/lib/services/retrospective';
 import { uuidSchema } from '@/lib/validation/common';
+import { RATE_LIMITS, checkRateLimit } from '@/lib/utils/rate-limit';
+import { checkCostGuard } from '@/lib/llm/cost-guard';
 
 const dateSchema = z.string().refine((s) => !Number.isNaN(Date.parse(s)), {
   message: 'must be a valid ISO date or datetime string',
@@ -48,6 +56,17 @@ export async function POST(req: Request): Promise<Response> {
     } = await supabase.auth.getUser();
     if (!user) return unauthenticated();
 
+    // Rate limit BEFORE body parse: retrospective is the priciest LLM call.
+    const rl = checkRateLimit(
+      RATE_LIMITS.RETROSPECTIVE.bucket,
+      user.id,
+      RATE_LIMITS.RETROSPECTIVE,
+    );
+    if (!rl.allowed) {
+      log.warn('retrospective_rate_limited', { retryAfter: rl.retryAfterSeconds });
+      return rateLimited(rl.retryAfterSeconds ?? 60);
+    }
+
     let json: unknown;
     try {
       json = await req.json();
@@ -59,6 +78,17 @@ export async function POST(req: Request): Promise<Response> {
       return validationError(
         parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
       );
+    }
+
+    // Cost guard — retrospective ALWAYS hits the LLM (unlike risk-assess
+    // which can score without explanation), so guard is unconditional.
+    const guard = await checkCostGuard(supabase, user.id);
+    if (!guard.allowed) {
+      log.warn('retrospective_cost_capped', {
+        spent: guard.spentTodayUsd,
+        cap: guard.capUsd,
+      });
+      return rateLimited(guard.retryAfterSeconds ?? 3600);
     }
 
     const period =

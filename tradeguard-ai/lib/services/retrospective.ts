@@ -23,6 +23,7 @@ import { anonymizeTrade } from '@/lib/llm/anonymize';
 import { createLlmClient } from '@/lib/llm/client';
 import type { LlmClient, LlmMessageResult } from '@/lib/llm/client';
 import { containsWarmthExpression } from '@/lib/llm/filter';
+import { withTelemetry } from '@/lib/llm/telemetry';
 import {
   RETROSPECTIVE_SYSTEM_PROMPT,
   RETROSPECTIVE_USER_TEMPLATE,
@@ -95,11 +96,21 @@ export async function generateRetrospective(
     const userMessage = RETRSPECTIVE_USER_PROMPT(promptInput);
 
     try {
-      lastResult = await llm.messages({
-        systemPrompt: RETROSPECTIVE_SYSTEM_PROMPT,
-        userMessage,
-        maxTokens: 1024,
-      });
+      // Wrap with telemetry so every attempt (including retries) lands in
+      // `llm_calls`. Mock clients in tests omit `provider` — fall back to
+      // 'anthropic' for those (telemetry is best-effort + RLS-scoped, so a
+      // wrong tag from a mock can't leak across users).
+      const llmProvider = 'provider' in llm ? (llm.provider as 'anthropic' | 'openai') : 'anthropic';
+      lastResult = await withTelemetry(
+        supabase,
+        { ownerId, provider: llmProvider, purpose: 'retrospective' },
+        () =>
+          llm.messages({
+            systemPrompt: RETROSPECTIVE_SYSTEM_PROMPT,
+            userMessage,
+            maxTokens: 1024,
+          }),
+      );
     } catch (err) {
       logger.error('retrospective_llm_call_failed', {
         ownerId,
