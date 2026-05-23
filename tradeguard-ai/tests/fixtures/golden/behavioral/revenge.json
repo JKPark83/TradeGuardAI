@@ -1,0 +1,57 @@
+[
+  {
+    "name": "no prior losses returns 0",
+    "input": { "prevConsecutiveLossCount": 0, "gapMinutesSincePrevLoss": 5 },
+    "expected": 0
+  },
+  {
+    "name": "no prior losses with long gap returns 0",
+    "input": { "prevConsecutiveLossCount": 0, "gapMinutesSincePrevLoss": 60 },
+    "expected": 0
+  },
+  {
+    "name": "2+ consecutive losses with gap < 10 returns 80",
+    "input": { "prevConsecutiveLossCount": 2, "gapMinutesSincePrevLoss": 5 },
+    "expected": 80
+  },
+  {
+    "name": "3 consecutive losses with gap = 9 returns 80",
+    "input": { "prevConsecutiveLossCount": 3, "gapMinutesSincePrevLoss": 9 },
+    "expected": 80
+  },
+  {
+    "name": "1 consecutive loss with gap < 10 returns 50",
+    "input": { "prevConsecutiveLossCount": 1, "gapMinutesSincePrevLoss": 5 },
+    "expected": 50
+  },
+  {
+    "name": "1 consecutive loss with gap = 0 returns 50",
+    "input": { "prevConsecutiveLossCount": 1, "gapMinutesSincePrevLoss": 0 },
+    "expected": 50
+  },
+  {
+    "name": "1 consecutive loss with gap in [10,30) returns 30",
+    "input": { "prevConsecutiveLossCount": 1, "gapMinutesSincePrevLoss": 15 },
+    "expected": 30
+  },
+  {
+    "name": "2 consecutive losses with gap in [10,30) returns 30",
+    "input": { "prevConsecutiveLossCount": 2, "gapMinutesSincePrevLoss": 25 },
+    "expected": 30
+  },
+  {
+    "name": "1 consecutive loss with gap >= 30 returns 0",
+    "input": { "prevConsecutiveLossCount": 1, "gapMinutesSincePrevLoss": 30 },
+    "expected": 0
+  },
+  {
+    "name": "5 consecutive losses with gap = 90 returns 0",
+    "input": { "prevConsecutiveLossCount": 5, "gapMinutesSincePrevLoss": 90 },
+    "expected": 0
+  },
+  {
+    "name": "1 consecutive loss at gap=10 boundary returns 30",
+    "input": { "prevConsecutiveLossCount": 1, "gapMinutesSincePrevLoss": 10 },
+    "expected": 30
+  }
+]

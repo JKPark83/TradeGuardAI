@@ -1,0 +1,52 @@
+[
+  {
+    "name": "win-after-win 2x median returns 80",
+    "input": { "prevPnl": 250, "contracts": 4, "userMedianContracts30d": 2, "winStreak": 1 },
+    "expected": 80
+  },
+  {
+    "name": "win-after-win 3x median returns 80",
+    "input": { "prevPnl": 100, "contracts": 6, "userMedianContracts30d": 2, "winStreak": 1 },
+    "expected": 80
+  },
+  {
+    "name": "win-after-win 1.5x median returns 50",
+    "input": { "prevPnl": 200, "contracts": 3, "userMedianContracts30d": 2, "winStreak": 1 },
+    "expected": 50
+  },
+  {
+    "name": "win-after-win 1.9x median returns 50",
+    "input": { "prevPnl": 200, "contracts": 38, "userMedianContracts30d": 20, "winStreak": 1 },
+    "expected": 50
+  },
+  {
+    "name": "win streak >= 3 with 1.5x size returns 60",
+    "input": { "prevPnl": -50, "contracts": 3, "userMedianContracts30d": 2, "winStreak": 3 },
+    "expected": 60
+  },
+  {
+    "name": "win streak = 4 with 1.5x size returns 60",
+    "input": { "prevPnl": -50, "contracts": 3, "userMedianContracts30d": 2, "winStreak": 4 },
+    "expected": 60
+  },
+  {
+    "name": "prev loss with large size returns 0",
+    "input": { "prevPnl": -250, "contracts": 6, "userMedianContracts30d": 2, "winStreak": 0 },
+    "expected": 0
+  },
+  {
+    "name": "win-after-win below 1.5x returns 0",
+    "input": { "prevPnl": 200, "contracts": 2, "userMedianContracts30d": 2, "winStreak": 1 },
+    "expected": 0
+  },
+  {
+    "name": "win streak 3 but size = median returns 0",
+    "input": { "prevPnl": -50, "contracts": 2, "userMedianContracts30d": 2, "winStreak": 3 },
+    "expected": 0
+  },
+  {
+    "name": "prev pnl = 0 with large size returns 0",
+    "input": { "prevPnl": 0, "contracts": 4, "userMedianContracts30d": 2, "winStreak": 0 },
+    "expected": 0
+  }
+]
